@@ -92,6 +92,11 @@ _DEFAULT_PROVIDER_MODELS = {
     "copilot-acp": [
         "copilot-acp",
     ],
+    "gemini-cli": [
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview",
+    ],
     "copilot": [
         "gpt-5.4",
         "gpt-5.4-mini",
@@ -197,6 +202,7 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
 
     pconfig = PROVIDER_REGISTRY[provider_id]
     is_copilot_catalog_provider = provider_id in {"copilot", "copilot-acp"}
+    is_static_external_process_provider = provider_id == "gemini-cli"
 
     # Resolve API key and base URL for the probe
     if is_copilot_catalog_provider:
@@ -218,6 +224,10 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
             catalog=catalog,
             api_key=api_key,
         ) or current_model
+    elif is_static_external_process_provider:
+        api_key = ""
+        base_url = pconfig.inference_base_url
+        catalog = None
     else:
         api_key = ""
         for ev in pconfig.api_key_env_vars:
@@ -229,7 +239,9 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
         catalog = None
 
     # Try live /models endpoint
-    if is_copilot_catalog_provider and catalog:
+    if is_static_external_process_provider:
+        live_models = None
+    elif is_copilot_catalog_provider and catalog:
         live_models = [item.get("id", "") for item in catalog if item.get("id")]
     else:
         live_models = fetch_api_models(api_key, base_url)

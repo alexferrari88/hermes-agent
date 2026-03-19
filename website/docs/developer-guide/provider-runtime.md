@@ -42,6 +42,7 @@ Current provider families include:
 - OpenRouter
 - Nous Portal
 - OpenAI Codex
+- Gemini CLI OAuth
 - Anthropic (native)
 - Z.AI
 - Kimi / Moonshot
@@ -120,6 +121,23 @@ Codex uses a separate Responses API path:
 
 - `api_mode = codex_responses`
 - dedicated credential resolution and auth store support
+
+## External-process providers
+
+Hermes also supports provider backends that are resolved through a local subprocess instead of a raw HTTPS API key flow.
+
+Current external-process providers:
+
+- `copilot-acp` via the local `copilot --acp --stdio` CLI
+- `gemini-cli` via Hermes's Node bridge plus the Gemini CLI OAuth cache
+
+Runtime resolution for these providers can return extra metadata beyond the normal `api_key` / `base_url` pair, including:
+
+- `command`
+- `args`
+- `oauth_file` for Gemini CLI
+
+That metadata is propagated into both the main agent path and the auxiliary-client path, which is why docs and tests need to treat Gemini CLI as more than "just another API key provider".
 
 ## Auxiliary model routing
 

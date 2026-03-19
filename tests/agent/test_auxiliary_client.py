@@ -600,6 +600,7 @@ class TestGetTextAuxiliaryClient:
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", "/tmp/hermes-test-no-gemini-oauth.json")
         with patch("agent.auxiliary_client._read_nous_auth", return_value=None), \
              patch("agent.auxiliary_client._read_codex_access_token", return_value=None), \
              patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)):
@@ -697,6 +698,35 @@ class TestAuxiliaryPoolAwareness:
         assert call_kwargs["api_key"] == "gh-cli-token"
         assert call_kwargs["base_url"] == "https://api.githubcopilot.com"
         assert call_kwargs["default_headers"]["Editor-Version"]
+
+    def test_resolve_provider_client_gemini_cli_uses_bridge(self, monkeypatch):
+        with (
+            patch(
+                "hermes_cli.auth.resolve_external_process_provider_credentials",
+                return_value={
+                    "provider": "gemini-cli",
+                    "api_key": "gemini-cli",
+                    "base_url": "gemini-cli://oauth",
+                    "command": "/usr/bin/node",
+                    "args": ["/tmp/gemini_cli_bridge.mjs"],
+                    "oauth_file": "/tmp/oauth_creds.json",
+                    "source": "process",
+                },
+            ),
+            patch("agent.auxiliary_client.GeminiCLIClient") as mock_client_cls,
+        ):
+            gemini_client = MagicMock()
+            mock_client_cls.return_value = gemini_client
+            client, model = resolve_provider_client("gemini-cli")
+
+        assert client is gemini_client
+        assert model == "gemini-3-flash-preview"
+        call_kwargs = mock_client_cls.call_args.kwargs
+        assert call_kwargs["api_key"] == "gemini-cli"
+        assert call_kwargs["base_url"] == "gemini-cli://oauth"
+        assert call_kwargs["command"] == "/usr/bin/node"
+        assert call_kwargs["args"] == ["/tmp/gemini_cli_bridge.mjs"]
+        assert call_kwargs["oauth_file"] == "/tmp/oauth_creds.json"
 
     def test_vision_auto_uses_anthropic_when_no_higher_priority_backend(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-key")

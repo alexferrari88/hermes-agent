@@ -39,6 +39,7 @@ Both `provider` and `model` are **required**. If either is missing, the fallback
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Nous Portal | `nous` | `hermes login` (OAuth) |
 | OpenAI Codex | `openai-codex` | `hermes model` (ChatGPT OAuth) |
+| Gemini CLI OAuth | `gemini-cli` | Existing `gemini` login plus a readable `~/.gemini/oauth_creds.json` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` or Claude Code credentials |
 | z.ai / GLM | `zai` | `GLM_API_KEY` |
 | Kimi / Moonshot | `kimi-coding` | `KIMI_API_KEY` |
@@ -163,7 +164,7 @@ When a task's provider is set to `"auto"` (the default), Hermes tries providers 
 **For text tasks (compression, web extract, etc.):**
 
 ```text
-OpenRouter → Nous Portal → Custom endpoint → Codex OAuth →
+OpenRouter → Nous Portal → Custom endpoint → Codex OAuth → Gemini CLI OAuth →
 API-key providers (z.ai, Kimi, MiniMax, Hugging Face, Anthropic) → give up
 ```
 
@@ -241,6 +242,7 @@ All three — auxiliary, compression, fallback — work the same way: set `provi
 | `"openrouter"` | Force OpenRouter | `OPENROUTER_API_KEY` |
 | `"nous"` | Force Nous Portal | `hermes login` |
 | `"codex"` | Force Codex OAuth | `hermes model` → Codex |
+| `"gemini-cli"` | Force Gemini CLI OAuth | Existing `gemini` login and Node.js available |
 | `"main"` | Use whatever provider the main agent uses | Active main provider configured |
 | `"anthropic"` | Force Anthropic native | `ANTHROPIC_API_KEY` or Claude Code credentials |
 

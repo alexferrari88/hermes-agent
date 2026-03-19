@@ -16,6 +16,7 @@ You need at least one way to connect to an LLM. Use `hermes model` to switch pro
 |----------|-------|
 | **Nous Portal** | `hermes model` (OAuth, subscription-based) |
 | **OpenAI Codex** | `hermes model` (ChatGPT OAuth, uses Codex models) |
+| **Gemini CLI OAuth** | `hermes model` (reuses `~/.gemini/oauth_creds.json` from an existing Gemini CLI login) |
 | **GitHub Copilot** | `hermes model` (OAuth device code flow, `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`) |
 | **GitHub Copilot ACP** | `hermes model` (spawns local `copilot --acp --stdio`) |
 | **Anthropic** | `hermes model` (Claude Pro/Max via Claude Code auth, Anthropic API key, or manual setup-token) |
@@ -39,6 +40,10 @@ In the `model:` config section, you can use either `default:` or `model:` as the
 
 :::info Codex Note
 The OpenAI Codex provider authenticates via device code (open a URL, enter a code). Hermes stores the resulting credentials in its own auth store under `~/.hermes/auth.json` and can import existing Codex CLI credentials from `~/.codex/auth.json` when present. No Codex CLI installation is required.
+:::
+
+:::info Gemini CLI Note
+The Gemini CLI provider does not mint a separate Hermes token. It reuses the refreshable OAuth cache written by the Gemini CLI at `~/.gemini/oauth_creds.json`, then routes requests through Hermes's local Node bridge. Run `gemini` once first, sign in with the Google account tied to your Google AI Pro subscription, then select **Gemini CLI OAuth** in `hermes model`.
 :::
 
 :::warning

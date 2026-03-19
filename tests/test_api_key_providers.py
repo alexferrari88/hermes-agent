@@ -37,6 +37,7 @@ class TestProviderRegistry:
 
     @pytest.mark.parametrize("provider_id,name,auth_type", [
         ("copilot-acp", "GitHub Copilot ACP", "external_process"),
+        ("gemini-cli", "Gemini CLI OAuth", "external_process"),
         ("copilot", "GitHub Copilot", "api_key"),
         ("huggingface", "Hugging Face", "api_key"),
         ("zai", "Z.AI / GLM", "api_key"),
@@ -96,6 +97,7 @@ class TestProviderRegistry:
     def test_base_urls(self):
         assert PROVIDER_REGISTRY["copilot"].inference_base_url == "https://api.githubcopilot.com"
         assert PROVIDER_REGISTRY["copilot-acp"].inference_base_url == "acp://copilot"
+        assert PROVIDER_REGISTRY["gemini-cli"].inference_base_url == "gemini-cli://oauth"
         assert PROVIDER_REGISTRY["zai"].inference_base_url == "https://api.z.ai/api/paas/v4"
         assert PROVIDER_REGISTRY["kimi-coding"].inference_base_url == "https://api.moonshot.ai/v1"
         assert PROVIDER_REGISTRY["minimax"].inference_base_url == "https://api.minimax.io/anthropic"
@@ -127,6 +129,8 @@ PROVIDER_ENV_VARS = (
     "NOUS_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
     "OPENAI_BASE_URL", "HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH",
     "HERMES_COPILOT_ACP_ARGS", "COPILOT_ACP_BASE_URL",
+    "HERMES_GEMINI_OAUTH_FILE", "HERMES_GEMINI_BRIDGE_COMMAND",
+    "HERMES_GEMINI_BRIDGE_ARGS",
 )
 
 
@@ -134,6 +138,7 @@ PROVIDER_ENV_VARS = (
 def _clear_provider_env(monkeypatch):
     for key in PROVIDER_ENV_VARS:
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", "/tmp/hermes-test-no-gemini-oauth.json")
     monkeypatch.setattr("hermes_cli.auth._load_auth_store", lambda: {})
 
 
@@ -218,6 +223,10 @@ class TestResolveProvider:
     def test_alias_huggingface_hub(self):
         assert resolve_provider("huggingface-hub") == "huggingface"
 
+    def test_alias_gemini(self):
+        assert resolve_provider("gemini") == "gemini-cli"
+        assert resolve_provider("google-ai-pro") == "gemini-cli"
+
     def test_unknown_provider_raises(self):
         with pytest.raises(AuthError):
             resolve_provider("nonexistent-provider-xyz")
@@ -257,6 +266,13 @@ class TestResolveProvider:
     def test_auto_detects_hf_token(self, monkeypatch):
         monkeypatch.setenv("HF_TOKEN", "hf_test_token")
         assert resolve_provider("auto") == "huggingface"
+
+    def test_auto_detects_gemini_cli(self, monkeypatch, tmp_path):
+        oauth_file = tmp_path / "oauth_creds.json"
+        oauth_file.write_text('{"refresh_token":"refresh-token"}')
+        monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", str(oauth_file))
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: "/usr/bin/node")
+        assert resolve_provider("auto") == "gemini-cli"
 
     def test_openrouter_takes_priority_over_glm(self, monkeypatch):
         """OpenRouter API key should win over GLM in auto-detection."""
@@ -337,6 +353,21 @@ class TestApiKeyProviderStatus:
         assert status["configured"] is True
         assert status["provider"] == "copilot-acp"
 
+    def test_gemini_cli_status_detects_oauth_cache(self, monkeypatch, tmp_path):
+        oauth_file = tmp_path / "oauth_creds.json"
+        oauth_file.write_text('{"refresh_token":"refresh-token"}')
+        monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", str(oauth_file))
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/bin/{command}")
+
+        status = get_external_process_provider_status("gemini-cli")
+
+        assert status["configured"] is True
+        assert status["logged_in"] is True
+        assert status["command"] == "node"
+        assert status["resolved_command"] == "/usr/bin/node"
+        assert status["oauth_file"] == str(oauth_file)
+        assert status["args"][0].endswith("scripts/gemini_cli_bridge.mjs")
+
     def test_non_api_key_provider(self):
         status = get_api_key_provider_status("nous")
         assert status["configured"] is False
@@ -409,6 +440,22 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["base_url"] == "acp://copilot"
         assert creds["command"] == "/usr/local/bin/copilot"
         assert creds["args"] == ["--acp", "--stdio"]
+        assert creds["source"] == "process"
+
+    def test_resolve_gemini_cli_with_cached_oauth(self, monkeypatch, tmp_path):
+        oauth_file = tmp_path / "oauth_creds.json"
+        oauth_file.write_text('{"refresh_token":"refresh-token"}')
+        monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", str(oauth_file))
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        creds = resolve_external_process_provider_credentials("gemini-cli")
+
+        assert creds["provider"] == "gemini-cli"
+        assert creds["api_key"] == "gemini-cli"
+        assert creds["base_url"] == "gemini-cli://oauth"
+        assert creds["command"] == "/usr/local/bin/node"
+        assert creds["oauth_file"] == str(oauth_file)
+        assert creds["args"][0].endswith("scripts/gemini_cli_bridge.mjs")
         assert creds["source"] == "process"
 
     def test_resolve_kimi_with_key(self, monkeypatch):
@@ -584,6 +631,23 @@ class TestRuntimeProviderResolution:
         assert result["base_url"] == "acp://copilot"
         assert result["command"] == "/usr/local/bin/copilot"
         assert result["args"] == ["--acp", "--stdio", "--debug"]
+
+    def test_runtime_gemini_cli_uses_process_runtime(self, monkeypatch, tmp_path):
+        oauth_file = tmp_path / "oauth_creds.json"
+        oauth_file.write_text('{"refresh_token":"refresh-token"}')
+        monkeypatch.setenv("HERMES_GEMINI_OAUTH_FILE", str(oauth_file))
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        result = resolve_runtime_provider(requested="gemini-cli")
+
+        assert result["provider"] == "gemini-cli"
+        assert result["api_mode"] == "chat_completions"
+        assert result["api_key"] == "gemini-cli"
+        assert result["base_url"] == "gemini-cli://oauth"
+        assert result["command"] == "/usr/local/bin/node"
+        assert result["oauth_file"] == str(oauth_file)
 
 
 # =============================================================================
