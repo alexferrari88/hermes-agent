@@ -58,6 +58,11 @@ _DEFAULT_PROVIDER_MODELS = {
     "copilot-acp": [
         "copilot-acp",
     ],
+    "gemini-cli": [
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview",
+    ],
     "copilot": [
         "gpt-5.4",
         "gpt-5.4-mini",
@@ -154,6 +159,7 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
 
     pconfig = PROVIDER_REGISTRY[provider_id]
     is_copilot_catalog_provider = provider_id in {"copilot", "copilot-acp"}
+    is_static_external_process_provider = provider_id == "gemini-cli"
 
     # Resolve API key and base URL for the probe
     if is_copilot_catalog_provider:
@@ -175,6 +181,10 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
             catalog=catalog,
             api_key=api_key,
         ) or current_model
+    elif is_static_external_process_provider:
+        api_key = ""
+        base_url = pconfig.inference_base_url
+        catalog = None
     else:
         api_key = ""
         for ev in pconfig.api_key_env_vars:
@@ -186,7 +196,9 @@ def _setup_provider_model_selection(config, provider_id, current_model, prompt_c
         catalog = None
 
     # Try live /models endpoint
-    if is_copilot_catalog_provider and catalog:
+    if is_static_external_process_provider:
+        live_models = None
+    elif is_copilot_catalog_provider and catalog:
         live_models = [item.get("id", "") for item in catalog if item.get("id")]
     else:
         live_models = fetch_api_models(api_key, base_url)
@@ -823,6 +835,7 @@ def setup_model_provider(config: dict):
     existing_custom = get_env_value("OPENAI_BASE_URL")
     copilot_status = get_auth_status("copilot")
     copilot_acp_status = get_auth_status("copilot-acp")
+    gemini_cli_status = get_auth_status("gemini-cli")
 
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
     current_config_provider = str(model_cfg.get("provider") or "").strip().lower() or None
@@ -849,6 +862,7 @@ def setup_model_provider(config: dict):
         or existing_or
         or copilot_status.get("logged_in")
         or copilot_acp_status.get("logged_in")
+        or gemini_cli_status.get("logged_in")
     )
 
     # Build "keep current" label
@@ -889,6 +903,7 @@ def setup_model_provider(config: dict):
         "OpenCode Go (open models, $10/month subscription)",
         "GitHub Copilot (uses GITHUB_TOKEN or gh auth token)",
         "GitHub Copilot ACP (spawns `copilot --acp --stdio`)",
+        "Gemini CLI OAuth (reuses Gemini CLI auth, if available)",
     ]
     if keep_label:
         provider_choices.append(keep_label)
@@ -1533,7 +1548,29 @@ def setup_model_provider(config: dict):
         _set_model_provider(config, "copilot-acp", pconfig.inference_base_url)
         selected_base_url = pconfig.inference_base_url
 
-    # else: provider_idx == 16 (Keep current) — only shown when a provider already exists
+    elif provider_idx == 16:  # Gemini CLI OAuth
+        selected_provider = "gemini-cli"
+        print()
+        print_header("Gemini CLI OAuth")
+        pconfig = PROVIDER_REGISTRY["gemini-cli"]
+        print_info("Hermes will reuse Gemini CLI OAuth credentials from ~/.gemini/oauth_creds.json.")
+        print_info("Install Node.js and sign in with `gemini` first.")
+        print_info(f"Base marker: {pconfig.inference_base_url}")
+        print()
+
+        gemini_status = get_auth_status("gemini-cli")
+        if gemini_status.get("logged_in"):
+            print_info(f"Current: OAuth credentials found at {gemini_status.get('oauth_file', '~/.gemini/oauth_creds.json')}")
+        else:
+            print_warning("Gemini CLI credentials were not found. Run `gemini` and sign in, then rerun setup.")
+
+        if existing_custom:
+            save_env_value("OPENAI_BASE_URL", "")
+            save_env_value("OPENAI_API_KEY", "")
+        _set_model_provider(config, "gemini-cli", pconfig.inference_base_url)
+        selected_base_url = pconfig.inference_base_url
+
+    # else: provider_idx == 17 (Keep current) — only shown when a provider already exists
     # Normalize "keep current" to an explicit provider so downstream logic
     # doesn't fall back to the generic OpenRouter/static-model path.
     if selected_provider is None:
@@ -1706,7 +1743,7 @@ def setup_model_provider(config: dict):
                     _set_default_model(config, custom)
             _update_config_for_provider("openai-codex", DEFAULT_CODEX_BASE_URL)
             _set_model_provider(config, "openai-codex", DEFAULT_CODEX_BASE_URL)
-        elif selected_provider == "copilot-acp":
+        elif selected_provider in {"copilot-acp", "gemini-cli"}:
             _setup_provider_model_selection(
                 config, selected_provider, current_model,
                 prompt_choice, prompt,
@@ -1775,7 +1812,7 @@ def setup_model_provider(config: dict):
     # Write provider+base_url to config.yaml only after model selection is complete.
     # This prevents a race condition where the gateway picks up a new provider
     # before the model name has been updated to match.
-    if selected_provider in ("copilot-acp", "copilot", "zai", "kimi-coding", "minimax", "minimax-cn", "kilocode", "anthropic") and selected_base_url is not None:
+    if selected_provider in ("copilot-acp", "gemini-cli", "copilot", "zai", "kimi-coding", "minimax", "minimax-cn", "kilocode", "anthropic") and selected_base_url is not None:
         _update_config_for_provider(selected_provider, selected_base_url)
 
     save_config(config)

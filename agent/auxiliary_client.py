@@ -49,6 +49,7 @@ from openai import OpenAI
 
 from hermes_cli.config import get_hermes_home
 from hermes_constants import OPENROUTER_BASE_URL
+from agent.gemini_cli_client import AsyncGeminiCLIClient, GeminiCLIClient
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,10 @@ _API_KEY_PROVIDER_AUX_MODELS: Dict[str, str] = {
     "opencode-zen": "gemini-3-flash",
     "opencode-go": "glm-5",
     "kilocode": "google/gemini-3-flash-preview",
+}
+
+_EXTERNAL_PROCESS_PROVIDER_AUX_MODELS: Dict[str, str] = {
+    "gemini-cli": "gemini-3-flash-preview",
 }
 
 # OpenRouter app attribution headers
@@ -662,6 +667,26 @@ def _try_codex() -> Tuple[Optional[Any], Optional[str]]:
     return CodexAuxiliaryClient(real_client, _CODEX_AUX_MODEL), _CODEX_AUX_MODEL
 
 
+def _try_gemini_cli() -> Tuple[Optional[Any], Optional[str]]:
+    try:
+        from hermes_cli.auth import resolve_external_process_provider_credentials
+
+        creds = resolve_external_process_provider_credentials("gemini-cli")
+    except Exception as exc:
+        logger.debug("Gemini CLI auxiliary resolution failed: %s", exc)
+        return None, None
+
+    model = _EXTERNAL_PROCESS_PROVIDER_AUX_MODELS.get("gemini-cli", "gemini-3-flash-preview")
+    client = GeminiCLIClient(
+        api_key=creds.get("api_key", "gemini-cli"),
+        base_url=creds.get("base_url", ""),
+        command=creds.get("command", ""),
+        args=list(creds.get("args") or []),
+        oauth_file=creds.get("oauth_file", ""),
+    )
+    return client, model
+
+
 def _try_anthropic() -> Tuple[Optional[Any], Optional[str]]:
     try:
         from agent.anthropic_adapter import build_anthropic_client, resolve_anthropic_token
@@ -719,7 +744,7 @@ def _resolve_forced_provider(forced: str) -> Tuple[Optional[OpenAI], Optional[st
 
     if forced == "main":
         # "main" = skip OpenRouter/Nous, use the main chat model's credentials.
-        for try_fn in (_try_custom_endpoint, _try_codex, _resolve_api_key_provider):
+        for try_fn in (_try_custom_endpoint, _try_codex, _try_gemini_cli, _resolve_api_key_provider):
             client, model = try_fn()
             if client is not None:
                 return client, model
@@ -736,7 +761,7 @@ def _resolve_auto() -> Tuple[Optional[OpenAI], Optional[str]]:
     global auxiliary_is_nous
     auxiliary_is_nous = False  # Reset — _try_nous() will set True if it wins
     for try_fn in (_try_openrouter, _try_nous, _try_custom_endpoint,
-                   _try_codex, _resolve_api_key_provider):
+                   _try_codex, _try_gemini_cli, _resolve_api_key_provider):
         client, model = try_fn()
         if client is not None:
             return client, model
@@ -763,6 +788,8 @@ def _to_async_client(sync_client, model: str):
         return AsyncCodexAuxiliaryClient(sync_client), model
     if isinstance(sync_client, AnthropicAuxiliaryClient):
         return AsyncAnthropicAuxiliaryClient(sync_client), model
+    if isinstance(sync_client, GeminiCLIClient):
+        return AsyncGeminiCLIClient(sync_client), model
 
     async_kwargs = {
         "api_key": sync_client.api_key,
@@ -798,6 +825,7 @@ def resolve_provider_client(
     Args:
         provider: Provider identifier.  One of:
             "openrouter", "nous", "openai-codex" (or "codex"),
+            "gemini-cli",
             "zai", "kimi-coding", "minimax", "minimax-cn",
             "custom" (OPENAI_BASE_URL + OPENAI_API_KEY),
             "auto" (full auto-detection chain).
@@ -879,6 +907,16 @@ def resolve_provider_client(
         if client is None:
             logger.warning("resolve_provider_client: openai-codex requested "
                            "but no Codex OAuth token found (run: hermes model)")
+            return None, None
+        final_model = model or default
+        return (_to_async_client(client, final_model) if async_mode
+                else (client, final_model))
+
+    if provider == "gemini-cli":
+        client, default = _try_gemini_cli()
+        if client is None:
+            logger.warning("resolve_provider_client: gemini-cli requested "
+                           "but Gemini CLI OAuth is not configured (run: gemini)")
             return None, None
         final_model = model or default
         return (_to_async_client(client, final_model) if async_mode
@@ -974,6 +1012,13 @@ def resolve_provider_client(
             return resolve_provider_client("openai-codex", model, async_mode)
         # Other OAuth providers not directly supported
         logger.warning("resolve_provider_client: OAuth provider %s not "
+                       "directly supported, try 'auto'", provider)
+        return None, None
+
+    elif pconfig.auth_type == "external_process":
+        if provider == "gemini-cli":
+            return resolve_provider_client("gemini-cli", model, async_mode)
+        logger.warning("resolve_provider_client: external-process provider %s not "
                        "directly supported, try 'auto'", provider)
         return None, None
 

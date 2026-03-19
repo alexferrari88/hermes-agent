@@ -128,7 +128,7 @@ def _has_any_provider_configured() -> bool:
     # Check provider-specific auth fallbacks (for example, Copilot via gh auth).
     try:
         for provider_id, pconfig in PROVIDER_REGISTRY.items():
-            if pconfig.auth_type != "api_key":
+            if pconfig.auth_type != "api_key" and provider_id != "gemini-cli":
                 continue
             status = get_auth_status(provider_id)
             if status.get("logged_in"):
@@ -787,6 +787,7 @@ def cmd_model(args):
         "nous": "Nous Portal",
         "openai-codex": "OpenAI Codex",
         "copilot-acp": "GitHub Copilot ACP",
+        "gemini-cli": "Gemini CLI OAuth",
         "copilot": "GitHub Copilot",
         "anthropic": "Anthropic",
         "zai": "Z.AI / GLM",
@@ -813,6 +814,7 @@ def cmd_model(args):
         ("nous", "Nous Portal (Nous Research subscription)"),
         ("openai-codex", "OpenAI Codex"),
         ("copilot-acp", "GitHub Copilot ACP (spawns `copilot --acp --stdio`)"),
+        ("gemini-cli", "Gemini CLI OAuth (reuses ~/.gemini/oauth_creds.json)"),
         ("copilot", "GitHub Copilot (uses GITHUB_TOKEN or gh auth token)"),
         ("anthropic", "Anthropic (Claude models — API key or Claude Code)"),
         ("zai", "Z.AI / GLM (Zhipu AI direct API)"),
@@ -884,6 +886,8 @@ def cmd_model(args):
         _model_flow_openai_codex(config, current_model)
     elif selected_provider == "copilot-acp":
         _model_flow_copilot_acp(config, current_model)
+    elif selected_provider == "gemini-cli":
+        _model_flow_gemini_cli(config, current_model)
     elif selected_provider == "copilot":
         _model_flow_copilot(config, current_model)
     elif selected_provider == "custom":
@@ -1452,6 +1456,11 @@ _PROVIDER_MODELS = {
     "copilot-acp": [
         "copilot-acp",
     ],
+    "gemini-cli": [
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview",
+    ],
     "copilot": [
         "gpt-5.4",
         "gpt-5.4-mini",
@@ -1871,6 +1880,59 @@ def _model_flow_copilot_acp(config, current_model=""):
         cfg["model"] = model
     model["provider"] = provider_id
     model["base_url"] = effective_base
+    model["api_mode"] = "chat_completions"
+    save_config(cfg)
+    deactivate_provider()
+
+    print(f"Default model set to: {selected} (via {pconfig.name})")
+
+
+def _model_flow_gemini_cli(config, current_model=""):
+    """Gemini CLI OAuth flow using cached Gemini CLI credentials."""
+    from hermes_cli.auth import (
+        PROVIDER_REGISTRY,
+        _prompt_model_selection,
+        _save_model_choice,
+        deactivate_provider,
+        get_external_process_provider_status,
+    )
+    from hermes_cli.config import load_config, save_config
+
+    del config
+
+    provider_id = "gemini-cli"
+    pconfig = PROVIDER_REGISTRY[provider_id]
+    status = get_external_process_provider_status(provider_id)
+    resolved_command = status.get("resolved_command") or status.get("command") or "node"
+    oauth_file = status.get("oauth_file") or "~/.gemini/oauth_creds.json"
+
+    print("  Gemini CLI OAuth reuses the cached credentials from your Gemini CLI login.")
+    print("  Hermes runs its own local Node bridge and sends requests through Gemini Code Assist.")
+    print(f"  Command: {resolved_command}")
+    print(f"  OAuth file: {oauth_file}")
+    print(f"  Backend marker: {pconfig.inference_base_url}")
+    print()
+
+    if not status.get("logged_in"):
+        print("  Gemini CLI credentials were not found or are incomplete.")
+        print("  Run `gemini` and sign in again, then rerun `hermes model`.")
+        return
+
+    model_list = _PROVIDER_MODELS.get("gemini-cli", [])
+    selected = _prompt_model_selection(model_list, current_model=current_model)
+    if not selected:
+        print("No change.")
+        return
+
+    _save_model_choice(selected)
+
+    cfg = load_config()
+    model = cfg.get("model")
+    if not isinstance(model, dict):
+        model = {"default": model} if model else {}
+        cfg["model"] = model
+    model["provider"] = provider_id
+    model["base_url"] = pconfig.inference_base_url
     model["api_mode"] = "chat_completions"
     save_config(cfg)
     deactivate_provider()
@@ -3114,7 +3176,7 @@ For more help on a command:
     )
     chat_parser.add_argument(
         "--provider",
-        choices=["auto", "openrouter", "nous", "openai-codex", "copilot-acp", "copilot", "anthropic", "zai", "kimi-coding", "minimax", "minimax-cn", "kilocode"],
+        choices=["auto", "openrouter", "nous", "openai-codex", "copilot-acp", "gemini-cli", "copilot", "anthropic", "zai", "kimi-coding", "minimax", "minimax-cn", "kilocode"],
         default=None,
         help="Inference provider (default: auto)"
     )

@@ -18,6 +18,7 @@ Hermes Agent works with any OpenAI-compatible API. Supported providers include:
 
 - **[OpenRouter](https://openrouter.ai/)** — access hundreds of models through one API key (recommended for flexibility)
 - **Nous Portal** — Nous Research's own inference endpoint
+- **Gemini CLI OAuth** — reuse your existing Gemini CLI login, including Google AI Pro-backed access
 - **OpenAI** — GPT-4o, o1, o3, etc.
 - **Anthropic** — Claude models (via OpenRouter or compatible proxy)
 - **Google** — Gemini models (via OpenRouter or compatible proxy)
@@ -26,7 +27,7 @@ Hermes Agent works with any OpenAI-compatible API. Supported providers include:
 - **MiniMax** — global and China endpoints
 - **Local models** — via [Ollama](https://ollama.com/), [vLLM](https://docs.vllm.ai/), [llama.cpp](https://github.com/ggerganov/llama.cpp), [SGLang](https://github.com/sgl-project/sglang), or any OpenAI-compatible server
 
-Set your provider with `hermes model` or by editing `~/.hermes/.env`. See the [Environment Variables](./environment-variables.md) reference for all provider keys.
+Set your provider with `hermes model` or by editing `~/.hermes/.env`. For Gemini CLI OAuth, run `gemini` once first so Hermes can reuse `~/.gemini/oauth_creds.json`. See the [Environment Variables](./environment-variables.md) reference for all provider keys.
 
 ### Does it work on Windows?
 

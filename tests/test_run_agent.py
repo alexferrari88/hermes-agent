@@ -2345,6 +2345,38 @@ def test_aiagent_uses_copilot_acp_client():
     assert mock_acp_client.call_args.kwargs["args"] == ["--acp", "--stdio"]
 
 
+def test_aiagent_uses_gemini_cli_client():
+    with (
+        patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+        patch("run_agent.check_toolset_requirements", return_value={}),
+        patch("run_agent.OpenAI") as mock_openai,
+        patch("agent.gemini_cli_client.GeminiCLIClient") as mock_gemini_client,
+    ):
+        gemini_client = MagicMock()
+        mock_gemini_client.return_value = gemini_client
+
+        agent = AIAgent(
+            api_key="gemini-cli",
+            base_url="gemini-cli://oauth",
+            provider="gemini-cli",
+            command="/usr/bin/node",
+            args=["/tmp/gemini_cli_bridge.mjs"],
+            oauth_file="/tmp/oauth_creds.json",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+        )
+
+    assert agent.client is gemini_client
+    mock_openai.assert_not_called()
+    mock_gemini_client.assert_called_once()
+    assert mock_gemini_client.call_args.kwargs["base_url"] == "gemini-cli://oauth"
+    assert mock_gemini_client.call_args.kwargs["api_key"] == "gemini-cli"
+    assert mock_gemini_client.call_args.kwargs["command"] == "/usr/bin/node"
+    assert mock_gemini_client.call_args.kwargs["args"] == ["/tmp/gemini_cli_bridge.mjs"]
+    assert mock_gemini_client.call_args.kwargs["oauth_file"] == "/tmp/oauth_creds.json"
+
+
 def test_is_openai_client_closed_honors_custom_client_flag():
     assert AIAgent._is_openai_client_closed(SimpleNamespace(is_closed=True)) is True
     assert AIAgent._is_openai_client_closed(SimpleNamespace(is_closed=False)) is False

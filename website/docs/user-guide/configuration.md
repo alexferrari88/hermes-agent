@@ -63,6 +63,7 @@ You need at least one way to connect to an LLM. Use `hermes model` to switch pro
 |----------|-------|
 | **Nous Portal** | `hermes model` (OAuth, subscription-based) |
 | **OpenAI Codex** | `hermes model` (ChatGPT OAuth, uses Codex models) |
+| **Gemini CLI OAuth** | `hermes model` (reuses `~/.gemini/oauth_creds.json` from an existing Gemini CLI login) |
 | **GitHub Copilot** | `hermes model` (OAuth device code flow, `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`) |
 | **GitHub Copilot ACP** | `hermes model` (spawns local `copilot --acp --stdio`) |
 | **Anthropic** | `hermes model` (Claude Pro/Max via Claude Code auth, Anthropic API key, or manual setup-token) |
@@ -80,6 +81,10 @@ You need at least one way to connect to an LLM. Use `hermes model` to switch pro
 
 :::info Codex Note
 The OpenAI Codex provider authenticates via device code (open a URL, enter a code). Hermes stores the resulting credentials in its own auth store under `~/.hermes/auth.json` and can import existing Codex CLI credentials from `~/.codex/auth.json` when present. No Codex CLI installation is required.
+:::
+
+:::info Gemini CLI Note
+The Gemini CLI provider does not mint a separate Hermes token. It reuses the refreshable OAuth cache written by the Gemini CLI at `~/.gemini/oauth_creds.json`, then routes requests through Hermes's local Node bridge. Run `gemini` once first, sign in with the Google account tied to your Google AI Pro subscription, then select **Gemini CLI OAuth** in `hermes model`.
 :::
 
 :::warning
@@ -172,6 +177,38 @@ model:
 | `COPILOT_GITHUB_TOKEN` | GitHub token for Copilot API (first priority) |
 | `HERMES_COPILOT_ACP_COMMAND` | Override the Copilot CLI binary path (default: `copilot`) |
 | `HERMES_COPILOT_ACP_ARGS` | Override ACP args (default: `--acp --stdio`) |
+
+### Gemini CLI OAuth
+
+Hermes can reuse the login state from the official Gemini CLI instead of asking for a separate Gemini API key.
+
+```bash
+gemini
+# Sign in with your Google account / Google AI Pro subscription
+
+hermes chat --provider gemini-cli --model gemini-3.1-pro-preview
+```
+
+Or choose it interactively:
+
+```bash
+hermes model
+# Select: Gemini CLI OAuth
+```
+
+What Hermes uses internally:
+
+- OAuth cache: `~/.gemini/oauth_creds.json`
+- Bridge command: `node scripts/gemini_cli_bridge.mjs`
+- Provider id: `gemini-cli`
+
+Optional overrides:
+
+| Environment variable | Description |
+|---------------------|-------------|
+| `HERMES_GEMINI_OAUTH_FILE` | Use a different Gemini CLI OAuth cache file |
+| `HERMES_GEMINI_BRIDGE_COMMAND` | Override the bridge runtime (default: `node`) |
+| `HERMES_GEMINI_BRIDGE_ARGS` | Override bridge arguments |
 
 ### First-Class Chinese AI Providers
 
@@ -547,7 +584,7 @@ fallback_model:
 
 When activated, the fallback swaps the model and provider mid-session without losing your conversation. It fires **at most once** per session.
 
-Supported providers: `openrouter`, `nous`, `openai-codex`, `copilot`, `anthropic`, `zai`, `kimi-coding`, `minimax`, `minimax-cn`, `custom`.
+Supported providers: `openrouter`, `nous`, `openai-codex`, `gemini-cli`, `copilot`, `anthropic`, `zai`, `kimi-coding`, `minimax`, `minimax-cn`, `custom`.
 
 :::tip
 Fallback is configured exclusively through `config.yaml` — there are no environment variables for it. For full details on when it triggers, supported providers, and how it interacts with auxiliary tasks and delegation, see [Fallback Providers](/docs/user-guide/features/fallback-providers).

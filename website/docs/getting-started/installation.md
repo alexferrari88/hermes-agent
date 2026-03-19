@@ -183,6 +183,8 @@ Or set them via the CLI:
 hermes config set OPENROUTER_API_KEY sk-or-v1-your-key-here
 ```
 
+If you prefer an OAuth-backed provider, you can skip adding an API key here and run `hermes model` instead. For example, Hermes can reuse existing login state from Nous Portal, OpenAI Codex, Claude Code, or Gemini CLI.
+
 ### Step 8: Add `hermes` to Your PATH
 
 ```bash

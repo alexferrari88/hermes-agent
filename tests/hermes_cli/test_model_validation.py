@@ -132,6 +132,7 @@ class TestProviderLabel:
         assert provider_label("kimi") == "Kimi / Moonshot"
         assert provider_label("copilot") == "GitHub Copilot"
         assert provider_label("copilot-acp") == "GitHub Copilot ACP"
+        assert provider_label("gemini-cli") == "Gemini CLI OAuth"
         assert provider_label("auto") == "Auto"
 
     def test_unknown_provider_preserves_original_name(self):
@@ -169,6 +170,10 @@ class TestProviderModelIds:
 
         assert "gpt-5.4" in ids
         assert "copilot-acp" not in ids
+
+    def test_gemini_cli_returns_curated_defaults(self):
+        ids = provider_model_ids("gemini-cli")
+        assert ids == ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
 
 
 # -- fetch_api_models --------------------------------------------------------
@@ -295,7 +300,7 @@ class TestCopilotNormalization:
         assert copilot_model_api_mode("gpt-4o-mini") == "chat_completions"
         assert copilot_model_api_mode("claude-sonnet-4.6") == "chat_completions"
         assert copilot_model_api_mode("claude-opus-4.6") == "chat_completions"
-        assert copilot_model_api_mode("gemini-2.5-pro") == "chat_completions"
+        assert copilot_model_api_mode("gemini-3.1-pro-preview") == "chat_completions"
 
     def test_copilot_api_mode_with_catalog_both_endpoints(self):
         """When catalog shows both endpoints, model ID pattern wins."""

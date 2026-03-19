@@ -376,6 +376,7 @@ class AIAgent:
         acp_args: list[str] | None = None,
         command: str = None,
         args: list[str] | None = None,
+        oauth_file: str = None,
         model: str = "anthropic/claude-opus-4.6",  # OpenRouter format
         max_iterations: int = 90,  # Default tool-calling iterations (shared with subagents)
         tool_delay: float = 1.0,
@@ -484,6 +485,9 @@ class AIAgent:
         self.provider = provider_name or "openrouter"
         self.acp_command = acp_command or command
         self.acp_args = list(acp_args or args or [])
+        self.command = command
+        self.args = list(args or [])
+        self.oauth_file = oauth_file
         if api_mode in {"chat_completions", "codex_responses", "anthropic_messages"}:
             self.api_mode = api_mode
         elif self.provider == "openai-codex":
@@ -707,6 +711,17 @@ class AIAgent:
                 if self.provider == "copilot-acp":
                     client_kwargs["command"] = self.acp_command
                     client_kwargs["args"] = self.acp_args
+                elif self.provider == "gemini-cli":
+                    if getattr(self, "command", None):
+                        client_kwargs["command"] = self.command
+                    elif getattr(self, "acp_command", None):
+                        client_kwargs["command"] = self.acp_command
+                    if getattr(self, "args", None):
+                        client_kwargs["args"] = self.args
+                    elif getattr(self, "acp_args", None):
+                        client_kwargs["args"] = self.acp_args
+                    if getattr(self, "oauth_file", None):
+                        client_kwargs["oauth_file"] = self.oauth_file
                 effective_base = base_url
                 if "openrouter" in effective_base.lower():
                     client_kwargs["default_headers"] = {
@@ -732,6 +747,12 @@ class AIAgent:
                         "api_key": _routed_client.api_key,
                         "base_url": str(_routed_client.base_url),
                     }
+                    if hasattr(_routed_client, "command"):
+                        client_kwargs["command"] = _routed_client.command
+                    if hasattr(_routed_client, "args"):
+                        client_kwargs["args"] = list(_routed_client.args)
+                    if hasattr(_routed_client, "oauth_file"):
+                        client_kwargs["oauth_file"] = _routed_client.oauth_file
                     # Preserve any default_headers the router set
                     if hasattr(_routed_client, '_default_headers') and _routed_client._default_headers:
                         client_kwargs["default_headers"] = dict(_routed_client._default_headers)
@@ -3106,6 +3127,17 @@ class AIAgent:
                 self._client_log_context(),
             )
             return client
+        if self.provider == "gemini-cli" or str(client_kwargs.get("base_url", "")).startswith("gemini-cli://"):
+            from agent.gemini_cli_client import GeminiCLIClient
+
+            client = GeminiCLIClient(**client_kwargs)
+            logger.info(
+                "Gemini CLI client created (%s, shared=%s) %s",
+                reason,
+                shared,
+                self._client_log_context(),
+            )
+            return client
         client = OpenAI(**client_kwargs)
         logger.info(
             "OpenAI client created (%s, shared=%s) %s",
@@ -3783,6 +3815,12 @@ class AIAgent:
                     "api_key": fb_client.api_key,
                     "base_url": fb_base_url,
                 }
+                if hasattr(fb_client, "command"):
+                    self._client_kwargs["command"] = fb_client.command
+                if hasattr(fb_client, "args"):
+                    self._client_kwargs["args"] = list(fb_client.args)
+                if hasattr(fb_client, "oauth_file"):
+                    self._client_kwargs["oauth_file"] = fb_client.oauth_file
 
             # Re-evaluate prompt caching for the new provider/model
             is_native_anthropic = fb_api_mode == "anthropic_messages"

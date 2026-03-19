@@ -341,15 +341,16 @@ def resolve_runtime_provider(
             "requested_provider": requested_provider,
         }
 
-    if provider == "copilot-acp":
+    if provider in {"copilot-acp", "gemini-cli"}:
         creds = resolve_external_process_provider_credentials(provider)
         return {
-            "provider": "copilot-acp",
+            "provider": provider,
             "api_mode": "chat_completions",
             "base_url": creds.get("base_url", "").rstrip("/"),
             "api_key": creds.get("api_key", ""),
             "command": creds.get("command", ""),
             "args": list(creds.get("args") or []),
+            "oauth_file": creds.get("oauth_file", ""),
             "source": creds.get("source", "process"),
             "requested_provider": requested_provider,
         }

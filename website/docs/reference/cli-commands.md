@@ -66,7 +66,7 @@ Common options:
 | `-q`, `--query "..."` | One-shot, non-interactive prompt. |
 | `-m`, `--model <model>` | Override the model for this run. |
 | `-t`, `--toolsets <csv>` | Enable a comma-separated set of toolsets. |
-| `--provider <provider>` | Force a provider: `auto`, `openrouter`, `nous`, `openai-codex`, `copilot`, `copilot-acp`, `anthropic`, `zai`, `kimi-coding`, `minimax`, `minimax-cn`, `opencode-zen`, `opencode-go`, `ai-gateway`, `kilocode`, `alibaba`. |
+| `--provider <provider>` | Force a provider: `auto`, `openrouter`, `nous`, `openai-codex`, `gemini-cli`, `copilot`, `copilot-acp`, `anthropic`, `zai`, `kimi-coding`, `minimax`, `minimax-cn`, `kilocode`. |
 | `-v`, `--verbose` | Verbose output. |
 | `-Q`, `--quiet` | Programmatic mode: suppress banner/spinner/tool previews. |
 | `--resume <session>` / `--continue [name]` | Resume a session directly from `chat`. |
@@ -97,6 +97,7 @@ hermes model
 Use this when you want to:
 - switch default providers
 - log into OAuth-backed providers during model selection
+- reuse external CLI credential caches such as Gemini CLI and Claude Code
 - pick from provider-specific model lists
 - save the new default into config
 
