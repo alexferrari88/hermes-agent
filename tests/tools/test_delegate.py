@@ -21,6 +21,7 @@ from tools.delegate_tool import (
     DELEGATE_TASK_SCHEMA,
     MAX_CONCURRENT_CHILDREN,
     MAX_DEPTH,
+    _apply_delegation_overrides,
     check_delegate_requirements,
     delegate_task,
     _build_child_agent,
@@ -61,6 +62,8 @@ class TestDelegateRequirements(unittest.TestCase):
         self.assertIn("tasks", props)
         self.assertIn("context", props)
         self.assertIn("toolsets", props)
+        self.assertIn("provider", props)
+        self.assertIn("model", props)
         self.assertIn("max_iterations", props)
         self.assertEqual(props["tasks"]["maxItems"], 3)
 
@@ -95,6 +98,27 @@ class TestStripBlockedTools(unittest.TestCase):
     def test_empty_input(self):
         result = _strip_blocked_tools([])
         self.assertEqual(result, [])
+
+
+class TestDelegationOverrides(unittest.TestCase):
+    def test_explicit_model_overrides_config_model(self):
+        cfg = {"model": "anthropic/claude-haiku-3.5", "provider": "openrouter"}
+        result = _apply_delegation_overrides(cfg, model="google/gemini-3-flash-preview")
+        self.assertEqual(result["model"], "google/gemini-3-flash-preview")
+        self.assertEqual(result["provider"], "openrouter")
+
+    def test_explicit_provider_overrides_direct_endpoint_config(self):
+        cfg = {
+            "model": "qwen2.5-coder",
+            "provider": "openrouter",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "local-key",
+        }
+        result = _apply_delegation_overrides(cfg, provider="nous")
+        self.assertEqual(result["provider"], "nous")
+        self.assertEqual(result["model"], "qwen2.5-coder")
+        self.assertNotIn("base_url", result)
+        self.assertNotIn("api_key", result)
 
 
 class TestDelegateTask(unittest.TestCase):
@@ -882,6 +906,98 @@ class TestDelegationProviderIntegration(unittest.TestCase):
             # But provider/base_url/api_key should inherit from parent
             self.assertEqual(kwargs["provider"], parent.provider)
             self.assertEqual(kwargs["base_url"], parent.base_url)
+
+    @patch("tools.delegate_tool._load_config")
+    @patch("tools.delegate_tool._resolve_delegation_credentials")
+    def test_explicit_provider_and_model_override_config_before_resolution(self, mock_creds, mock_cfg):
+        mock_cfg.return_value = {
+            "max_iterations": 45,
+            "model": "anthropic/claude-haiku-3.5",
+            "provider": "openrouter",
+            "base_url": "http://localhost:1234/v1",
+            "api_key": "local-key",
+        }
+        mock_creds.return_value = {
+            "model": "google/gemini-3-flash-preview",
+            "provider": "nous",
+            "base_url": "https://inference-api.nousresearch.com/v1",
+            "api_key": "nous-key",
+            "api_mode": "chat_completions",
+        }
+        parent = _make_mock_parent(depth=0)
+
+        with patch("tools.delegate_tool._build_child_agent") as mock_build, \
+             patch("tools.delegate_tool._run_single_child") as mock_run:
+            mock_build.return_value = MagicMock()
+            mock_run.return_value = {
+                "task_index": 0,
+                "status": "completed",
+                "summary": "Done",
+                "api_calls": 1,
+                "duration_seconds": 1.0,
+            }
+
+            delegate_task(
+                goal="Use explicit routing",
+                provider="nous",
+                model="google/gemini-3-flash-preview",
+                parent_agent=parent,
+            )
+
+        mock_creds.assert_called_once_with(
+            {
+                "max_iterations": 45,
+                "model": "google/gemini-3-flash-preview",
+                "provider": "nous",
+            },
+            parent,
+        )
+
+    @patch("tools.delegate_tool._load_config")
+    @patch("tools.delegate_tool._resolve_delegation_credentials")
+    def test_explicit_model_override_reaches_all_batch_children(self, mock_creds, mock_cfg):
+        mock_cfg.return_value = {
+            "max_iterations": 45,
+            "model": "anthropic/claude-haiku-3.5",
+            "provider": "openrouter",
+        }
+        mock_creds.return_value = {
+            "model": "google/gemini-3-flash-preview",
+            "provider": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-or-batch",
+            "api_mode": "chat_completions",
+        }
+        parent = _make_mock_parent(depth=0)
+
+        with patch("tools.delegate_tool._build_child_agent") as mock_build, \
+             patch("tools.delegate_tool._run_single_child") as mock_run:
+            mock_build.return_value = MagicMock()
+            mock_run.return_value = {
+                "task_index": 0,
+                "status": "completed",
+                "summary": "Done",
+                "api_calls": 1,
+                "duration_seconds": 1.0,
+            }
+
+            delegate_task(
+                tasks=[{"goal": "Task A"}, {"goal": "Task B"}],
+                model="google/gemini-3-flash-preview",
+                parent_agent=parent,
+            )
+
+            mock_creds.assert_called_once_with(
+                {
+                    "max_iterations": 45,
+                    "model": "google/gemini-3-flash-preview",
+                    "provider": "openrouter",
+                },
+                parent,
+            )
+            self.assertEqual(mock_build.call_count, 2)
+            for call in mock_build.call_args_list:
+                self.assertEqual(call.kwargs.get("model"), "google/gemini-3-flash-preview")
 
 
 if __name__ == "__main__":

@@ -405,6 +405,8 @@ def delegate_task(
     context: Optional[str] = None,
     toolsets: Optional[List[str]] = None,
     tasks: Optional[List[Dict[str, Any]]] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
     max_iterations: Optional[int] = None,
     parent_agent=None,
 ) -> str:
@@ -434,6 +436,7 @@ def delegate_task(
     cfg = _load_config()
     default_max_iter = cfg.get("max_iterations", DEFAULT_MAX_ITERATIONS)
     effective_max_iter = max_iterations or default_max_iter
+    effective_cfg = _apply_delegation_overrides(cfg, provider=provider, model=model)
 
     # Resolve delegation credentials (provider:model pair).
     # When delegation.provider is configured, this resolves the full credential
@@ -441,7 +444,7 @@ def delegate_task(
     # used by CLI/gateway startup.  When unconfigured, returns None values so
     # children inherit from the parent.
     try:
-        creds = _resolve_delegation_credentials(cfg, parent_agent)
+        creds = _resolve_delegation_credentials(effective_cfg, parent_agent)
     except ValueError as exc:
         return json.dumps({"error": str(exc)})
 
@@ -669,6 +672,30 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     }
 
 
+def _apply_delegation_overrides(
+    cfg: Optional[dict],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> dict:
+    """Apply explicit delegate_task provider/model overrides on top of config."""
+    effective_cfg = dict(cfg or {})
+
+    normalized_model = str(model or "").strip() or None
+    normalized_provider = str(provider or "").strip() or None
+
+    if normalized_model:
+        effective_cfg["model"] = normalized_model
+
+    if normalized_provider:
+        effective_cfg["provider"] = normalized_provider
+        # Explicit provider must take precedence over any configured direct endpoint.
+        effective_cfg.pop("base_url", None)
+        effective_cfg.pop("api_key", None)
+
+    return effective_cfg
+
+
 def _load_config() -> dict:
     """Load delegation config from CLI_CONFIG or persistent config.
 
@@ -753,6 +780,24 @@ DELEGATE_TASK_SCHEMA = {
                     "full-stack tasks."
                 ),
             },
+            "provider": {
+                "type": "string",
+                "description": (
+                    "Optional provider override for all spawned subagents. "
+                    "Takes priority over delegation.provider in config.yaml. "
+                    "When set, any configured delegation.base_url/api_key direct "
+                    "endpoint is ignored and the named provider is resolved instead."
+                ),
+            },
+            "model": {
+                "type": "string",
+                "description": (
+                    "Optional model override for all spawned subagents. "
+                    "Takes priority over delegation.model in config.yaml. "
+                    "If unset, delegate_task falls back to delegation.model and "
+                    "then to the parent agent's model."
+                ),
+            },
             "tasks": {
                 "type": "array",
                 "items": {
@@ -800,6 +845,8 @@ registry.register(
         context=args.get("context"),
         toolsets=args.get("toolsets"),
         tasks=args.get("tasks"),
+        provider=args.get("provider"),
+        model=args.get("model"),
         max_iterations=args.get("max_iterations"),
         parent_agent=kw.get("parent_agent")),
     check_fn=check_delegate_requirements,
