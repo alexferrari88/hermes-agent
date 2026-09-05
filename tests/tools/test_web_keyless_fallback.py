@@ -207,7 +207,7 @@ class TestProviderRouting:
         client.return_value.search.assert_called_once_with(
             search_queries=["q"],
             objective="q",
-            mode="advanced",
+            mode="fast",
             advanced_settings={"max_results": 5},
         )
         client.return_value.beta.search.assert_not_called()

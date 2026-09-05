@@ -19,8 +19,8 @@ from plugins.web.parallel.provider import (
 @pytest.mark.parametrize(
     ("configured", "expected"),
     [
-        (None, "advanced"),
-        ("not-a-mode", "advanced"),
+        (None, "fast"),
+        ("not-a-mode", "fast"),
         ("agentic", "advanced"),
         ("one-shot", "basic"),
         ("fast", "basic"),
@@ -41,6 +41,92 @@ def test_search_mode_preserves_legacy_semantics_and_explicit_v1_modes(
         monkeypatch.setenv("PARALLEL_SEARCH_MODE", configured)
 
     assert _resolve_search_mode() == expected
+
+
+@pytest.mark.parametrize("configured", ["turbo", "fast", "basic", "advanced"])
+def test_search_mode_reads_v1_mode_from_web_config_when_env_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str,
+) -> None:
+    monkeypatch.delenv("PARALLEL_SEARCH_MODE", raising=False)
+
+    with patch(
+        "hermes_cli.config.load_config_readonly",
+        return_value={"web": {"parallel_search_mode": configured}},
+    ):
+        assert _resolve_search_mode() == configured
+
+
+def test_search_mode_legacy_env_overrides_web_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PARALLEL_SEARCH_MODE", "agentic")
+
+    with patch(
+        "hermes_cli.config.load_config_readonly",
+        return_value={"web": {"parallel_search_mode": "turbo"}},
+    ):
+        assert _resolve_search_mode() == "advanced"
+
+
+@pytest.mark.parametrize("override", ["", "   ", "invalid-mode"])
+def test_invalid_env_override_uses_fallback_not_valid_yaml(
+    monkeypatch: pytest.MonkeyPatch,
+    override: str,
+) -> None:
+    monkeypatch.setenv("PARALLEL_SEARCH_MODE", override)
+    with patch(
+        "hermes_cli.config.load_config_readonly",
+        return_value={"web": {"parallel_search_mode": "advanced"}},
+    ):
+        assert _resolve_search_mode() == "fast"
+
+
+def test_keyless_search_bypasses_mode_configuration() -> None:
+    expected = {"success": True, "data": {"web": []}}
+    with (
+        patch("tools.interrupt.is_interrupted", return_value=False),
+        patch("agent.web_search_provider.get_provider_env", return_value=""),
+        patch("plugins.web.keyless_mcp.use_keyless", return_value=True),
+        patch("plugins.web.keyless_mcp.search_with_failover", return_value=expected) as search,
+        patch("plugins.web.parallel.provider._resolve_search_mode") as resolve_mode,
+        patch("plugins.web.parallel.provider._get_sync_client") as sdk,
+    ):
+        assert ParallelWebSearchProvider().search("test query", limit=3) == expected
+    search.assert_called_once_with("parallel", "test query", 3)
+    resolve_mode.assert_not_called()
+    sdk.assert_not_called()
+
+
+@pytest.mark.parametrize("configured", ["turbo", "fast", "basic", "advanced"])
+def test_search_forwards_each_configured_v1_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str,
+) -> None:
+    calls: list[dict] = []
+
+    class FakeClient:
+        def search(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(results=[])
+
+    monkeypatch.delenv("PARALLEL_SEARCH_MODE", raising=False)
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-key")
+    with (
+        patch(
+            "hermes_cli.config.load_config_readonly",
+            return_value={"web": {"parallel_search_mode": configured}},
+        ),
+        patch(
+            "plugins.web.parallel.provider._get_sync_client",
+            return_value=FakeClient(),
+        ),
+        patch("tools.interrupt.is_interrupted", return_value=False),
+    ):
+        result = ParallelWebSearchProvider().search("Parallel SDK", limit=5)
+
+    assert result == {"success": True, "data": {"web": []}}
+    assert calls[0]["mode"] == configured
 
 
 def test_search_uses_v1_client_and_preserves_normalized_result_shape(

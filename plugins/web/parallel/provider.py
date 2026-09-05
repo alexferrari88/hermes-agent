@@ -17,14 +17,12 @@ Config keys this provider responds to::
       search_backend: "parallel"      # explicit per-capability
       extract_backend: "parallel"     # explicit per-capability
       backend: "parallel"             # shared fallback
-      # Optional: search mode via PARALLEL_SEARCH_MODE. Legacy agentic,
-      # one-shot, and fast values retain their Beta semantics; explicit v1
-      # values are basic, advanced, turbo, and v1-fast.
+      parallel_search_mode: "fast"    # turbo, fast, basic, or advanced
 
 Env vars::
 
     PARALLEL_API_KEY=...             # https://parallel.ai (required)
-    PARALLEL_SEARCH_MODE=agentic     # optional; maps to v1 advanced
+    PARALLEL_SEARCH_MODE=agentic     # legacy override; maps to v1 advanced
 """
 
 from __future__ import annotations
@@ -147,14 +145,27 @@ _SEARCH_MODE_ALIASES = {
 
 
 def _resolve_search_mode() -> str:
-    """Translate configured modes to their semantically equivalent v1 value.
+    """Resolve config-first defaults while preserving the legacy env override.
 
-    Bare ``fast`` retains its legacy Beta meaning (v1 ``basic``). The new v1
-    ``fast`` mode is available only through the explicit ``v1-fast`` alias.
+    ``web.parallel_search_mode`` accepts the native v1 mode names. For the
+    legacy environment override, bare ``fast`` retains its Beta meaning (v1
+    ``basic``); ``v1-fast`` selects the newer v1 ``fast`` mode.
     """
-    mode = os.getenv("PARALLEL_SEARCH_MODE", "agentic").lower().strip()
-    mode = _SEARCH_MODE_ALIASES.get(mode, mode)
-    return mode if mode in _V1_SEARCH_MODES else "advanced"
+    legacy_mode = os.getenv("PARALLEL_SEARCH_MODE")
+    if legacy_mode is not None:
+        mode = _SEARCH_MODE_ALIASES.get(legacy_mode.lower().strip(), legacy_mode)
+    else:
+        try:
+            from hermes_cli.config import load_config_readonly
+
+            web_config = load_config_readonly().get("web") or {}
+            mode = web_config.get("parallel_search_mode", "fast")
+        except Exception as exc:  # noqa: BLE001 — config layer is optional
+            logger.debug("Could not load Parallel search mode config: %s", exc)
+            mode = "fast"
+
+    mode = str(mode).lower().strip()
+    return mode if mode in _V1_SEARCH_MODES else "fast"
 
 
 class ParallelWebSearchProvider(WebSearchProvider):

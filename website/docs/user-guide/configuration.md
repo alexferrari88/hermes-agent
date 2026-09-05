@@ -2377,7 +2377,7 @@ web:
 
 **Self-hosted Firecrawl:** Set `FIRECRAWL_API_URL` to point at your own instance. When a custom URL is set, the API key becomes optional (set `USE_DB_AUTHENTICATION=*** on the server to disable auth).
 
-**Parallel search modes:** Set `PARALLEL_SEARCH_MODE` to control search behavior. Legacy `agentic` (the default) maps to v1 `advanced`; legacy `one-shot` and `fast` map to v1 `basic`. Explicit v1 `basic`, `advanced`, and `turbo` values pass through. Use `v1-fast` to select the new v1 `fast` mode, which has no Beta equivalent.
+**Parallel search modes:** Set `web.parallel_search_mode` to `turbo`, `fast` (the default), `basic`, or `advanced`. Hermes defaults to `fast` because Parallel recommends it for most agents as the high-quality, sub-second option. For compatibility, a process-level `PARALLEL_SEARCH_MODE` overrides this setting: legacy `agentic` maps to v1 `advanced`, while legacy `one-shot` and `fast` map to v1 `basic`; use `v1-fast` for the new v1 `fast` mode. An empty or invalid environment override also takes precedence over YAML and falls back to `fast`; unset `PARALLEL_SEARCH_MODE` to use the YAML setting. This setting controls keyed API searches only; keyless searches use the anonymous MCP service and do not apply this mode.
 
 **Exa:** Set `EXA_API_KEY` in `~/.hermes/.env`. Supports `category` filtering (`company`, `research paper`, `news`, `people`, `personal site`, `pdf`) and domain/date filters.
 
